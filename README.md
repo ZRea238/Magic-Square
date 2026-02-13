@@ -1,6 +1,12 @@
 # Magic-Square
 A repo containing the code for the magic square solver
 
+Rules: each row, column, and both full diagonals must equal the target, and every value in the grid must be unique.
+
+Game modes:
+- `unbounded`: values can be any positive integers (subject to puzzle constraints)
+- `bounded_by_size_squared`: values must be `<= size^2` (for 5x5, max value is 25)
+
 ## Run API (FastAPI + Uvicorn)
 
 Install dependencies:
@@ -24,12 +30,13 @@ Example `POST /solve` request body:
 
 ```json
 {
-  "target": 9,
+  "target": 15,
   "size": 3,
+  "game_mode": "unbounded",
   "known_grid": [
-    [null, 3, null],
-    [3, null, null],
-    [null, null, null]
+    [8, null, null],
+    [null, 5, null],
+    [null, null, 2]
   ],
   "trace": true
 }
@@ -59,19 +66,58 @@ Example response body:
 ```json
 {
   "solution": [
-    [3, 3, 3],
-    [3, 3, 3],
-    [3, 3, 3]
+    [8, 1, 6],
+    [3, 5, 7],
+    [4, 9, 2]
   ],
   "grid_rows": [
-    "3 3 3",
-    "3 3 3",
-    "3 3 3"
+    "8 1 6",
+    "3 5 7",
+    "4 9 2"
   ],
-  "grid_text": "3 3 3\n3 3 3\n3 3 3",
+  "grid_text": "8 1 6\n3 5 7\n4 9 2",
   "trace": []
 }
 ```
+
+Example `POST /count` request body:
+
+```json
+{
+  "target": 15,
+  "size": 3,
+  "game_mode": "unbounded",
+  "known_grid": [
+    [8, null, null],
+    [null, 5, null],
+    [null, null, 2]
+  ],
+  "mode": "auto",
+  "max_seconds": 2.5,
+  "sample_paths": 300,
+  "use_multiprocessing": true,
+  "workers": 4
+}
+```
+
+Example `POST /count` response body:
+
+```json
+{
+  "mode_used": "auto",
+  "exact": false,
+  "lower_bound": 0,
+  "estimated_count": 1.21,
+  "relative_error": 0.31,
+  "message": "Exact count timed out; returning lower bound plus estimate."
+}
+```
+
+For long-running counts with progress/cancel support:
+
+1. `POST /count/jobs/start` to start a background job
+2. `GET /count/jobs/{job_id}` to read status, `lower_bound`, and `elapsed_seconds`
+3. `POST /count/jobs/{job_id}/cancel` to stop the job and keep the latest lower bound
 
 ## Solve From JSON
 
@@ -91,12 +137,13 @@ Example input file:
 
 ```json
 {
-  "target": 9,
+  "target": 15,
   "size": 3,
+  "game_mode": "unbounded",
   "known_grid": [
-    [null, 3, null],
-    [3, null, null],
-    [null, null, null]
+    [8, null, null],
+    [null, 5, null],
+    [null, null, 2]
   ]
 }
 ```
