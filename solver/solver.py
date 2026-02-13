@@ -755,19 +755,23 @@ def _count_exact_subproblem_worker(
     game_mode: GameMode,
     max_seconds: Optional[float],
 ) -> tuple[int, bool]:
-    result = count_solutions(
-        target=target,
-        size=size,
-        known_grid=known_grid,
-        game_mode=game_mode,
-        mode="exact",
-        max_seconds=max_seconds,
-        sample_paths=1,
-        use_multiprocessing=False,
-    )
-    if result["exact"]:
-        return int(result["count"]), False
-    return int(result.get("lower_bound", 0)), True
+    try:
+        result = count_solutions(
+            target=target,
+            size=size,
+            known_grid=known_grid,
+            game_mode=game_mode,
+            mode="exact",
+            max_seconds=max_seconds,
+            sample_paths=1,
+            use_multiprocessing=False,
+        )
+        if result["exact"]:
+            return int(result["count"]), False
+        return int(result.get("lower_bound", 0)), True
+    except ValueError:
+        # Branch became infeasible after the split; contributes zero solutions.
+        return 0, False
 
 
 def _estimate_solution_count(
