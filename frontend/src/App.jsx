@@ -3,6 +3,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 const MIN_SIZE = 2;
 const MAX_SIZE = 7;
+const GAME_MODES = ["unbounded", "bounded_by_size_squared"];
+const SAMPLE_FILES = [
+  { label: "Easy 3x3", path: "/examples/easy-3x3.json" },
+  { label: "Medium 4x4", path: "/examples/medium-4x4.json" },
+  { label: "Hard 5x5", path: "/examples/hard-5x5.json" },
+];
 
 function defaultTargetForSize(size) {
   return (size * (size * size + 1)) / 2;
@@ -25,6 +31,65 @@ function parseCellValue(value) {
   return parsed;
 }
 
+function normalizeKnownGrid(rawGrid, size) {
+  if (rawGrid === undefined || rawGrid === null) {
+    return createGrid(size, null);
+  }
+
+  if (!Array.isArray(rawGrid) || rawGrid.length !== size) {
+    throw new Error(`known_grid must be a ${size}x${size} array.`);
+  }
+
+  return rawGrid.map((row, rowIndex) => {
+    if (!Array.isArray(row) || row.length !== size) {
+      throw new Error(`known_grid must be a ${size}x${size} array.`);
+    }
+
+    return row.map((cell, colIndex) => {
+      if (cell === null || cell === "") {
+        return null;
+      }
+
+      const parsed = Number(cell);
+      if (!Number.isInteger(parsed) || parsed < 1) {
+        throw new Error(`Cell (${rowIndex + 1}, ${colIndex + 1}) must be an integer >= 1 or null.`);
+      }
+      return parsed;
+    });
+  });
+}
+
+function parsePuzzleJson(rawData) {
+  if (!rawData || typeof rawData !== "object" || Array.isArray(rawData)) {
+    throw new Error("Puzzle JSON must be an object.");
+  }
+
+  const parsedSize = Number(rawData.size);
+  if (!Number.isInteger(parsedSize) || parsedSize < MIN_SIZE || parsedSize > MAX_SIZE) {
+    throw new Error(`size must be an integer between ${MIN_SIZE} and ${MAX_SIZE}.`);
+  }
+
+  const parsedTarget = Number(rawData.target);
+  if (!Number.isInteger(parsedTarget) || parsedTarget <= parsedSize) {
+    throw new Error("target must be an integer greater than size.");
+  }
+
+  const parsedGameMode = rawData.game_mode ?? "unbounded";
+  if (!GAME_MODES.includes(parsedGameMode)) {
+    throw new Error(`game_mode must be one of: ${GAME_MODES.join(", ")}.`);
+  }
+
+  const rawGrid = rawData.known_grid ?? rawData.grid;
+  const knownGrid = normalizeKnownGrid(rawGrid, parsedSize);
+
+  return {
+    size: parsedSize,
+    target: parsedTarget,
+    gameMode: parsedGameMode,
+    knownGrid,
+  };
+}
+
 function App() {
   const [size, setSize] = useState(3);
   const [target, setTarget] = useState(defaultTargetForSize(3));
@@ -36,12 +101,33 @@ function App() {
   const [countMaxSeconds, setCountMaxSeconds] = useState(30);
   const [useMultiprocessing, setUseMultiprocessing] = useState(false);
   const [workerCount, setWorkerCount] = useState("");
+  const [selectedSamplePath, setSelectedSamplePath] = useState(SAMPLE_FILES[0].path);
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState(false);
   const [counting, setCounting] = useState(false);
   const countAbortControllerRef = useRef(null);
   const countPollIntervalRef = useRef(null);
   const activeCountJobIdRef = useRef(null);
+
+  function applyPuzzleConfig(puzzleConfig, sourceLabel) {
+    if (counting) {
+      handleCancelCount();
+    }
+
+    const nextGridInput = puzzleConfig.knownGrid.map((row) => row.map((value) => (value === null ? "" : String(value))));
+    const nextUserProvided = puzzleConfig.knownGrid.map((row) => row.map((value) => value !== null));
+
+    setSize(puzzleConfig.size);
+    setTarget(puzzleConfig.target);
+    setGameMode(puzzleConfig.gameMode);
+    setGridInput(nextGridInput);
+    setUserProvided(nextUserProvided);
+    setCountInfo(null);
+    setRunToCompletion(false);
+    setUseMultiprocessing(false);
+    setWorkerCount("");
+    showToast("success", `Loaded puzzle from ${sourceLabel}.`);
+  }
 
   const rules = useMemo(
     () => [
@@ -112,6 +198,72 @@ function App() {
     setWorkerCount("");
     setGameMode("unbounded");
     showToast("info", "Grid cleared.");
+  }
+
+  async function handleLocalFileLoad(event) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const rawText = await file.text();
+      const parsedJson = JSON.parse(rawText);
+      const puzzleConfig = parsePuzzleJson(parsedJson);
+      applyPuzzleConfig(puzzleConfig, file.name);
+    } catch (error) {
+      showToast("error", error.message || "Unable to load file.");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  async function handleSampleLoad() {
+    if (!selectedSamplePath) {
+      showToast("error", "Select a sample file first.");
+      return;
+    }
+
+    try {
+      const response = await fetch(selectedSamplePath);
+      if (!response.ok) {
+        throw new Error("Unable to load sample file.");
+      }
+      const parsedJson = await response.json();
+      const puzzleConfig = parsePuzzleJson(parsedJson);
+      const sampleLabel = SAMPLE_FILES.find((sample) => sample.path === selectedSamplePath)?.label ?? "sample file";
+      applyPuzzleConfig(puzzleConfig, sampleLabel);
+    } catch (error) {
+      showToast("error", error.message || "Unable to load sample file.");
+    }
+  }
+
+  function handleDownloadPuzzle() {
+    try {
+      const numericTarget = validateTarget();
+      const knownGrid = buildKnownGrid();
+      const payload = {
+        size,
+        target: numericTarget,
+        game_mode: gameMode,
+        known_grid: knownGrid,
+      };
+
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: "application/json",
+      });
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = downloadUrl;
+      anchor.download = `magic-square-${size}x${size}-target-${numericTarget}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      window.URL.revokeObjectURL(downloadUrl);
+      showToast("success", "Puzzle JSON downloaded.");
+    } catch (error) {
+      showToast("error", error.message || "Unable to download puzzle JSON.");
+    }
   }
 
   function buildKnownGrid(onlyUserProvided = false) {
@@ -406,6 +558,34 @@ function App() {
                 <option value="bounded_by_size_squared">Bounded by Size Squared</option>
               </select>
             </label>
+          </div>
+          <div className="import-tools">
+            <h3>Load Puzzle JSON</h3>
+            <label className="file-input-label">
+              Upload From Your Computer
+              <input type="file" accept="application/json,.json" onChange={handleLocalFileLoad} disabled={loading || counting} />
+            </label>
+            <label>
+              Example Puzzles
+              <select
+                value={selectedSamplePath}
+                onChange={(event) => setSelectedSamplePath(event.target.value)}
+                disabled={loading || counting}
+              >
+                {SAMPLE_FILES.map((sample) => (
+                  <option key={sample.path} value={sample.path}>
+                    {sample.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button className="btn btn-secondary" onClick={handleSampleLoad} disabled={loading || counting}>
+              Load Example
+            </button>
+            <button className="btn btn-secondary" onClick={handleDownloadPuzzle} disabled={loading || counting}>
+              Download Current Puzzle JSON
+            </button>
+            <p>Format: {`{"size": 3, "target": 15, "game_mode": "unbounded", "known_grid": [[8, null, null], ...]}`}</p>
           </div>
 
           <div className="legend">

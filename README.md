@@ -61,6 +61,14 @@ To override it, set `VITE_API_BASE` before starting Vite, for example:
 VITE_API_BASE=http://localhost:8000 npm run dev
 ```
 
+Frontend JSON loading:
+
+- Upload your own puzzle JSON file directly from the browser UI.
+- Load bundled examples from `frontend/public/examples`:
+  - `easy-3x3.json`
+  - `medium-4x4.json`
+  - `hard-5x5.json`
+
 Example response body:
 
 ```json
