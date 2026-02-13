@@ -124,6 +124,38 @@ input {
   gap: 0.6rem;
 }
 
+.actions-count {
+  grid-template-columns: 1fr;
+}
+
+.toggle-wrap {
+  margin-top: 0.9rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  font-size: 0.88rem;
+  color: #c1c8d6;
+}
+
+.toggle-wrap input {
+  margin-top: 0.15rem;
+  width: auto;
+}
+
+.count-limit-label {
+  margin-top: 0.8rem;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.88rem;
+  color: #c1c8d6;
+}
+
+.warning-text {
+  margin: 0.55rem 0 0;
+  font-size: 0.82rem;
+  color: #ffb5b5;
+}
+
 .btn {
   border: 0;
   border-radius: 10px;
@@ -148,6 +180,12 @@ input {
   border: 1px solid #30343d;
 }
 
+.btn-danger {
+  background: #3a161b;
+  color: #ffd6db;
+  border: 1px solid #6b2932;
+}
+
 .board-panel {
   min-height: 340px;
 }
@@ -155,6 +193,32 @@ input {
 .board {
   display: grid;
   gap: 0.6rem;
+}
+
+.count-display {
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+  background: #0d0f14;
+  border: 1px solid #222734;
+}
+
+.count-display h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #d4d9e3;
+}
+
+.count-display p {
+  margin: 0.5rem 0 0;
+  color: #b7becb;
+  font-size: 0.92rem;
+}
+
+.count-display small {
+  display: block;
+  margin-top: 0.5rem;
+  color: #8d95a3;
 }
 
 .cell {
