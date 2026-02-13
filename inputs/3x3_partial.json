@@ -1,9 +1,9 @@
 {
-  "target": 9,
+  "target": 15,
   "size": 3,
   "known_grid": [
-    [null, 3, null],
-    [3, null, null],
-    [null, null, null]
+    [8, null, null],
+    [null, 5, null],
+    [null, null, 2]
   ]
 }

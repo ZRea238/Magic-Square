@@ -9,30 +9,32 @@ from main import load_puzzle_from_file, run
 class TestMainJsonInput(unittest.TestCase):
     def test_loads_valid_payload_with_known_grid(self) -> None:
         payload = {
-            "target": 9,
+            "target": 15,
             "size": 3,
-            "known_grid": [[None, 3, None], [3, None, None], [None, None, None]],
+            "known_grid": [[8, None, None], [None, 5, None], [None, None, 2]],
         }
         file_path = self._write_json(payload)
 
-        target, size, known_grid = load_puzzle_from_file(file_path)
+        target, size, known_grid, game_mode = load_puzzle_from_file(file_path)
 
-        self.assertEqual(target, 9)
+        self.assertEqual(target, 15)
         self.assertEqual(size, 3)
         self.assertEqual(known_grid, payload["known_grid"])
+        self.assertEqual(game_mode, "unbounded")
 
     def test_loads_valid_payload_without_known_grid(self) -> None:
         payload = {
-            "target": 6,
-            "size": 2,
+            "target": 15,
+            "size": 3,
         }
         file_path = self._write_json(payload)
 
-        target, size, known_grid = load_puzzle_from_file(file_path)
+        target, size, known_grid, game_mode = load_puzzle_from_file(file_path)
 
-        self.assertEqual(target, 6)
-        self.assertEqual(size, 2)
+        self.assertEqual(target, 15)
+        self.assertEqual(size, 3)
         self.assertIsNone(known_grid)
+        self.assertEqual(game_mode, "unbounded")
 
     def test_raises_when_json_is_invalid(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -48,15 +50,29 @@ class TestMainJsonInput(unittest.TestCase):
 
     def test_loaded_payload_can_be_solved(self) -> None:
         payload = {
-            "target": 6,
-            "size": 2,
-            "known_grid": [[None, None], [None, None]],
+            "target": 15,
+            "size": 3,
+            "known_grid": [[8, None, None], [None, 5, None], [None, None, 2]],
         }
         file_path = self._write_json(payload)
-        target, size, known_grid = load_puzzle_from_file(file_path)
+        target, size, known_grid, game_mode = load_puzzle_from_file(file_path)
 
-        solution = run(target=target, size=size, known_grid=known_grid)
-        self.assertEqual(solution, [[3, 3], [3, 3]])
+        solution = run(target=target, size=size, known_grid=known_grid, game_mode=game_mode)
+        self.assertEqual(solution[0][0], 8)
+        self.assertEqual(solution[1][1], 5)
+        self.assertEqual(solution[2][2], 2)
+        self.assertEqual(sum(solution[0]), 15)
+
+    def test_loads_game_mode_from_json(self) -> None:
+        payload = {
+            "target": 15,
+            "size": 3,
+            "game_mode": "bounded_by_size_squared",
+        }
+        file_path = self._write_json(payload)
+
+        _, _, _, game_mode = load_puzzle_from_file(file_path)
+        self.assertEqual(game_mode, "bounded_by_size_squared")
 
     def _write_json(self, payload: dict) -> str:
         tmp_file = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
