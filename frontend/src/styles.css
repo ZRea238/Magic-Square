@@ -80,6 +80,42 @@ body {
   color: #b7bcc7;
 }
 
+.import-tools {
+  margin-top: 1rem;
+  padding: 0.8rem;
+  border-radius: 12px;
+  background: #0b0e14;
+  border: 1px solid #212633;
+}
+
+.import-tools h3 {
+  margin: 0 0 0.6rem;
+  font-size: 0.9rem;
+  color: #d8dde7;
+}
+
+.import-tools label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.86rem;
+  color: #b7bcc7;
+}
+
+.file-input-label {
+  margin-bottom: 0.65rem;
+}
+
+.import-tools button {
+  margin-top: 0.7rem;
+}
+
+.import-tools p {
+  margin: 0.6rem 0 0;
+  font-size: 0.78rem;
+  color: #8e96a5;
+  word-break: break-word;
+}
+
 select,
 input {
   width: 100%;

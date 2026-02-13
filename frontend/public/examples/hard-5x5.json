@@ -1,0 +1,12 @@
+{
+  "size": 5,
+  "target": 65,
+  "game_mode": "bounded_by_size_squared",
+  "known_grid": [
+    [17, null, 1, null, 15],
+    [null, 5, null, 14, null],
+    [4, null, 13, null, 22],
+    [null, 12, null, 21, null],
+    [11, null, 25, null, 9]
+  ]
+}
