@@ -164,6 +164,15 @@ input {
   grid-template-columns: 1fr;
 }
 
+.walkthrough-actions {
+  margin-top: 0.7rem;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.walkthrough-panel p {
+  margin-bottom: 0.35rem;
+}
+
 .toggle-wrap {
   margin-top: 0.9rem;
   display: flex;

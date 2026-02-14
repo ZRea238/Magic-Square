@@ -3,7 +3,7 @@ from typing import Callable, Optional
 
 from .constraints import select_next_cell_with_candidates
 from .state import apply_value, final_constraints_met, revert_value
-from .types import Grid, ProgressState, TraceLog
+from .types import Grid, ProgressState, TraceLog, TraceStep
 from .utils import indent, trace
 
 
@@ -22,8 +22,38 @@ def search_first_solution(
     unknown_positions: list[tuple[int, int]],
     trace_enabled: bool,
     trace_log: Optional[TraceLog],
+    trace_steps: Optional[list[TraceStep]],
+    trace_meta: Optional[dict[str, bool]],
+    trace_max_steps: int,
     depth: int,
 ) -> bool:
+    def record_step(
+        event: str,
+        message: str,
+        row: Optional[int] = None,
+        col: Optional[int] = None,
+        value: Optional[int] = None,
+        candidates: Optional[list[int]] = None,
+    ) -> None:
+        if trace_steps is None:
+            return
+        if len(trace_steps) >= trace_max_steps:
+            if trace_meta is not None:
+                trace_meta["truncated"] = True
+            return
+        trace_steps.append(
+            {
+                "event": event,
+                "message": message,
+                "depth": depth,
+                "row": row,
+                "col": col,
+                "value": value,
+                "candidates": candidates,
+                "grid": [grid_row[:] for grid_row in grid],
+            }
+        )
+
     choice = select_next_cell_with_candidates(
         target,
         size,
@@ -39,14 +69,20 @@ def search_first_solution(
         grid,
     )
     if choice is None:
-        trace(trace_enabled, trace_log, f"{indent(depth)}All cells assigned; validating final sums")
+        message = f"{indent(depth)}All cells assigned; validating final sums"
+        trace(trace_enabled, trace_log, message)
+        record_step("validate_complete", message)
         return final_constraints_met(target, size, row_sums, col_sums, diag_sums)
 
     r, c, candidates = choice
-    trace(trace_enabled, trace_log, f"{indent(depth)}Select cell ({r}, {c}) with {len(candidates)} candidates")
+    message = f"{indent(depth)}Select cell ({r}, {c}) with {len(candidates)} candidates"
+    trace(trace_enabled, trace_log, message)
+    record_step("select_cell", message, row=r, col=c, candidates=candidates)
 
     for value in candidates:
-        trace(trace_enabled, trace_log, f"{indent(depth)}Try value {value} at ({r}, {c})")
+        message = f"{indent(depth)}Try value {value} at ({r}, {c})"
+        trace(trace_enabled, trace_log, message)
+        record_step("try_value", message, row=r, col=c, value=value)
         apply_value(
             value,
             r,
@@ -77,12 +113,19 @@ def search_first_solution(
             unknown_positions=unknown_positions,
             trace_enabled=trace_enabled,
             trace_log=trace_log,
+            trace_steps=trace_steps,
+            trace_meta=trace_meta,
+            trace_max_steps=trace_max_steps,
             depth=depth + 1,
         ):
-            trace(trace_enabled, trace_log, f"{indent(depth)}Accept value {value} at ({r}, {c})")
+            message = f"{indent(depth)}Accept value {value} at ({r}, {c})"
+            trace(trace_enabled, trace_log, message)
+            record_step("accept_value", message, row=r, col=c, value=value)
             return True
 
-        trace(trace_enabled, trace_log, f"{indent(depth)}Backtrack on ({r}, {c}) value {value}")
+        message = f"{indent(depth)}Backtrack on ({r}, {c}) value {value}"
+        trace(trace_enabled, trace_log, message)
+        record_step("backtrack", message, row=r, col=c, value=value)
         revert_value(
             value,
             r,
@@ -98,7 +141,9 @@ def search_first_solution(
             used_values,
         )
 
-    trace(trace_enabled, trace_log, f"{indent(depth)}No valid values remain for ({r}, {c})")
+    message = f"{indent(depth)}No valid values remain for ({r}, {c})"
+    trace(trace_enabled, trace_log, message)
+    record_step("prune_branch", message, row=r, col=c)
     return False
 
 

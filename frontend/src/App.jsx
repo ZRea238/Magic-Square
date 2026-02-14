@@ -101,6 +101,12 @@ function App() {
   const [countMaxSeconds, setCountMaxSeconds] = useState(30);
   const [useMultiprocessing, setUseMultiprocessing] = useState(false);
   const [workerCount, setWorkerCount] = useState("");
+  const [walkthroughMode, setWalkthroughMode] = useState(false);
+  const [walkthroughMaxSteps, setWalkthroughMaxSteps] = useState(800);
+  const [walkthroughSteps, setWalkthroughSteps] = useState([]);
+  const [walkthroughIndex, setWalkthroughIndex] = useState(0);
+  const [walkthroughTruncated, setWalkthroughTruncated] = useState(false);
+  const [walkthroughPlaying, setWalkthroughPlaying] = useState(false);
   const [selectedSamplePath, setSelectedSamplePath] = useState(SAMPLE_FILES[0].path);
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -108,6 +114,29 @@ function App() {
   const countAbortControllerRef = useRef(null);
   const countPollIntervalRef = useRef(null);
   const activeCountJobIdRef = useRef(null);
+  const walkthroughPlayIntervalRef = useRef(null);
+
+  function clearWalkthrough() {
+    setWalkthroughSteps([]);
+    setWalkthroughIndex(0);
+    setWalkthroughTruncated(false);
+    setWalkthroughPlaying(false);
+    if (walkthroughPlayIntervalRef.current) {
+      window.clearInterval(walkthroughPlayIntervalRef.current);
+      walkthroughPlayIntervalRef.current = null;
+    }
+  }
+
+  function applyWalkthroughStep(nextIndex, steps = walkthroughSteps) {
+    if (!steps.length) {
+      return;
+    }
+    const boundedIndex = Math.max(0, Math.min(nextIndex, steps.length - 1));
+    const step = steps[boundedIndex];
+    const nextGrid = step.grid.map((row) => row.map((value) => (value === null ? "" : String(value))));
+    setWalkthroughIndex(boundedIndex);
+    setGridInput(nextGrid);
+  }
 
   function applyPuzzleConfig(puzzleConfig, sourceLabel) {
     if (counting) {
@@ -126,6 +155,7 @@ function App() {
     setRunToCompletion(false);
     setUseMultiprocessing(false);
     setWorkerCount("");
+    clearWalkthrough();
     showToast("success", `Loaded puzzle from ${sourceLabel}.`);
   }
 
@@ -166,6 +196,7 @@ function App() {
     setRunToCompletion(false);
     setUseMultiprocessing(false);
     setWorkerCount("");
+    clearWalkthrough();
   }
 
   function handleCellChange(rowIndex, colIndex, raw) {
@@ -184,6 +215,7 @@ function App() {
       next[rowIndex][colIndex] = raw !== "";
       return next;
     });
+    clearWalkthrough();
   }
 
   function handleClear() {
@@ -197,6 +229,7 @@ function App() {
     setUseMultiprocessing(false);
     setWorkerCount("");
     setGameMode("unbounded");
+    clearWalkthrough();
     showToast("info", "Grid cleared.");
   }
 
@@ -303,18 +336,26 @@ function App() {
   async function handleSolve() {
     let numericTarget;
     let knownGrid;
+    let numericTraceMaxSteps;
     try {
       numericTarget = validateTarget();
       knownGrid = buildKnownGrid();
+      numericTraceMaxSteps = Number(walkthroughMaxSteps);
+      if (walkthroughMode) {
+        if (!Number.isInteger(numericTraceMaxSteps) || numericTraceMaxSteps < 1) {
+          throw new Error("Walkthrough max steps must be a positive integer.");
+        }
+      }
     } catch (error) {
       showToast("error", error.message);
       return;
     }
 
     const providedMask = knownGrid.map((row) => row.map((value) => value !== null));
+    clearWalkthrough();
 
     setLoading(true);
-    showToast("info", "Solving puzzle...");
+    showToast("info", walkthroughMode ? "Solving puzzle and building walkthrough..." : "Solving puzzle...");
 
     try {
       const response = await fetch(`${API_BASE}/solve`, {
@@ -327,7 +368,9 @@ function App() {
           size,
           known_grid: knownGrid,
           game_mode: gameMode,
-          trace: false,
+          trace: walkthroughMode,
+          trace_steps: walkthroughMode,
+          trace_max_steps: numericTraceMaxSteps,
         }),
       });
 
@@ -336,9 +379,22 @@ function App() {
         throw new Error(data.detail ?? "Solver request failed.");
       }
 
-      setGridInput(data.solution.map((row) => row.map((value) => String(value))));
       setUserProvided(providedMask);
-      showToast("success", "Puzzle solved.");
+      if (walkthroughMode) {
+        const steps = data.trace_steps ?? [];
+        if (!steps.length) {
+          setGridInput(data.solution.map((row) => row.map((value) => String(value))));
+          showToast("info", "Solved, but no walkthrough steps were returned.");
+        } else {
+          setWalkthroughSteps(steps);
+          setWalkthroughTruncated(Boolean(data.trace_truncated));
+          applyWalkthroughStep(0, steps);
+          showToast("success", `Walkthrough ready (${steps.length} steps).`);
+        }
+      } else {
+        setGridInput(data.solution.map((row) => row.map((value) => String(value))));
+        showToast("success", "Puzzle solved.");
+      }
     } catch (error) {
       showToast("error", error.message);
     } finally {
@@ -470,6 +526,28 @@ function App() {
     showToast("info", "Cancel requested. Waiting for solver to stop...", true);
   }
 
+  function handleWalkthroughBack() {
+    if (!walkthroughSteps.length) {
+      return;
+    }
+    setWalkthroughPlaying(false);
+    applyWalkthroughStep(walkthroughIndex - 1);
+  }
+
+  function handleWalkthroughNext() {
+    if (!walkthroughSteps.length) {
+      return;
+    }
+    applyWalkthroughStep(walkthroughIndex + 1);
+  }
+
+  function handleWalkthroughPlayPause() {
+    if (!walkthroughSteps.length) {
+      return;
+    }
+    setWalkthroughPlaying((current) => !current);
+  }
+
   function renderCountText() {
     if (!countInfo) {
       return "Solution count will appear here.";
@@ -502,10 +580,44 @@ function App() {
   }
 
   useEffect(() => {
+    if (walkthroughPlayIntervalRef.current) {
+      window.clearInterval(walkthroughPlayIntervalRef.current);
+      walkthroughPlayIntervalRef.current = null;
+    }
+
+    if (!walkthroughPlaying || walkthroughSteps.length === 0) {
+      return undefined;
+    }
+
+    walkthroughPlayIntervalRef.current = window.setInterval(() => {
+      setWalkthroughIndex((current) => {
+        if (current >= walkthroughSteps.length - 1) {
+          setWalkthroughPlaying(false);
+          return current;
+        }
+        const nextIndex = current + 1;
+        const step = walkthroughSteps[nextIndex];
+        setGridInput(step.grid.map((row) => row.map((value) => (value === null ? "" : String(value)))));
+        return nextIndex;
+      });
+    }, 450);
+
+    return () => {
+      if (walkthroughPlayIntervalRef.current) {
+        window.clearInterval(walkthroughPlayIntervalRef.current);
+        walkthroughPlayIntervalRef.current = null;
+      }
+    };
+  }, [walkthroughPlaying, walkthroughSteps]);
+
+  useEffect(() => {
     return () => {
       clearCountPolling();
       if (countAbortControllerRef.current) {
         countAbortControllerRef.current.abort();
+      }
+      if (walkthroughPlayIntervalRef.current) {
+        window.clearInterval(walkthroughPlayIntervalRef.current);
       }
     };
   }, []);
@@ -598,9 +710,32 @@ function App() {
               Clear
             </button>
             <button className="btn btn-primary" onClick={handleSolve} disabled={loading}>
-              {loading ? "Solving..." : "Solve"}
+              {loading ? "Solving..." : walkthroughMode ? "Solve + Walkthrough" : "Solve"}
             </button>
           </div>
+          <label className="toggle-wrap">
+            <input
+              type="checkbox"
+              checked={walkthroughMode}
+              onChange={(event) => {
+                setWalkthroughMode(event.target.checked);
+                clearWalkthrough();
+              }}
+              disabled={loading || counting}
+            />
+            <span>Walkthrough mode (step-by-step pruning trace)</span>
+          </label>
+          <label className="count-limit-label">
+            <span>Walkthrough Max Steps</span>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={walkthroughMaxSteps}
+              onChange={(event) => setWalkthroughMaxSteps(event.target.value)}
+              disabled={loading || counting || !walkthroughMode}
+            />
+          </label>
           <div className="actions actions-count">
             <button className="btn btn-secondary" onClick={handleCountSolutions} disabled={loading || counting}>
               {counting ? "Counting..." : "Count Solutions"}
@@ -681,6 +816,44 @@ function App() {
             <p>{renderCountText()}</p>
             {countInfo ? <small>{countInfo.message ?? ""}</small> : null}
           </div>
+          {walkthroughMode ? (
+            <div className="count-display walkthrough-panel">
+              <h3>Solver Walkthrough</h3>
+              {!walkthroughSteps.length ? <p>Run solve in walkthrough mode to generate step-by-step trace events.</p> : null}
+              {walkthroughSteps.length ? (
+                <>
+                  <p>
+                    Step {walkthroughIndex + 1} / {walkthroughSteps.length}: {walkthroughSteps[walkthroughIndex].message}
+                  </p>
+                  <small>Event: {walkthroughSteps[walkthroughIndex].event}</small>
+                  <div className="actions walkthrough-actions">
+                    <button className="btn btn-secondary" onClick={handleWalkthroughBack} disabled={walkthroughIndex === 0}>
+                      Previous
+                    </button>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={handleWalkthroughPlayPause}
+                      disabled={walkthroughIndex >= walkthroughSteps.length - 1}
+                    >
+                      {walkthroughPlaying ? "Pause" : "Play"}
+                    </button>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={handleWalkthroughNext}
+                      disabled={walkthroughIndex >= walkthroughSteps.length - 1}
+                    >
+                      Next
+                    </button>
+                  </div>
+                  {walkthroughTruncated ? (
+                    <small>
+                      Walkthrough hit max step limit ({walkthroughMaxSteps}). Increase it for deeper traces on larger puzzles.
+                    </small>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
+          ) : null}
         </section>
       </section>
 

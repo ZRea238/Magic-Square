@@ -4,7 +4,7 @@ from typing import Callable, Optional
 from .counting import count_all_solutions_multiprocess, estimate_solution_count
 from .search import count_all_solutions, search_first_solution
 from .state import build_initial_state
-from .types import CountResult, GameMode, Grid, ProgressState, SolvedGrid, TraceLog
+from .types import CountResult, GameMode, Grid, ProgressState, SolvedGrid, TraceLog, TraceStep
 from .utils import trace as emit_trace
 from .validation import resolve_max_cell_value, validate_count_options, validate_global_uniqueness_feasibility
 
@@ -16,7 +16,13 @@ def solve_square(
     game_mode: GameMode = "unbounded",
     trace: bool = False,
     trace_log: Optional[TraceLog] = None,
+    trace_steps: Optional[list[TraceStep]] = None,
+    trace_meta: Optional[dict[str, bool]] = None,
+    trace_max_steps: int = 1000,
 ) -> SolvedGrid:
+    if trace_max_steps < 1:
+        raise ValueError("trace_max_steps must be >= 1")
+
     (
         grid,
         row_sums,
@@ -51,6 +57,9 @@ def solve_square(
         unknown_positions=unknown_positions,
         trace_enabled=trace,
         trace_log=trace_log,
+        trace_steps=trace_steps,
+        trace_meta=trace_meta,
+        trace_max_steps=trace_max_steps,
         depth=0,
     ):
         raise ValueError("No valid solution for the provided target and known grid")

@@ -62,6 +62,26 @@ class TestApiIntegration(unittest.TestCase):
         self.assertTrue(len(body["trace"]) > 0)
         self.assertTrue(any("Select cell" in line for line in body["trace"]))
 
+    def test_solve_endpoint_with_trace_steps_includes_walkthrough_frames(self) -> None:
+        response = self.client.post(
+            "/solve",
+            json={
+                "target": 15,
+                "size": 3,
+                "trace_steps": True,
+                "trace_max_steps": 120,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertIn("trace_steps", body)
+        self.assertTrue(len(body["trace_steps"]) > 0)
+        first_step = body["trace_steps"][0]
+        self.assertIn("event", first_step)
+        self.assertIn("message", first_step)
+        self.assertIn("grid", first_step)
+
     def test_solve_endpoint_returns_400_on_invalid_puzzle(self) -> None:
         response = self.client.post(
             "/solve",
