@@ -38,9 +38,17 @@ Example `POST /solve` request body:
     [null, 5, null],
     [null, null, 2]
   ],
-  "trace": true
+  "trace": true,
+  "trace_steps": true,
+  "trace_max_steps": 1000
 }
 ```
+
+Walkthrough tracing notes:
+
+- `trace_steps: true` returns structured solver events with grid snapshots for step-by-step replay in the frontend.
+- `trace_max_steps` caps returned events to avoid excessively large responses on harder puzzles.
+- The response includes `trace_truncated` when the step cap is reached.
 
 ## Run Frontend (React + Vite)
 

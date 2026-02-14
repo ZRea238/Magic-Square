@@ -22,6 +22,19 @@ class SolveRequest(BaseModel):
         description="Game mode: unbounded or bounded_by_size_squared.",
     )
     trace: bool = Field(default=False, description="Include solver trace output in the response")
+    trace_steps: bool = Field(default=False, description="Include structured trace steps for walkthrough/debugging.")
+    trace_max_steps: int = Field(default=1000, ge=1, le=20000, description="Maximum number of trace steps to return.")
+
+
+class TraceStepResponse(BaseModel):
+    event: str
+    message: str
+    depth: int
+    row: Optional[int] = None
+    col: Optional[int] = None
+    value: Optional[int] = None
+    candidates: Optional[list[int]] = None
+    grid: list[list[Optional[int]]]
 
 
 class SolveResponse(BaseModel):
@@ -29,6 +42,8 @@ class SolveResponse(BaseModel):
     grid_rows: list[str]
     grid_text: str
     trace: Optional[list[str]] = None
+    trace_steps: Optional[list[TraceStepResponse]] = None
+    trace_truncated: bool = False
 
 
 class CountRequest(BaseModel):
@@ -116,18 +131,30 @@ def health() -> dict[str, str]:
 @app.post("/solve", response_model=SolveResponse)
 def solve(request: SolveRequest) -> SolveResponse:
     try:
-        if request.trace:
+        if request.trace or request.trace_steps:
             trace_log: list[str] = []
+            trace_steps: list[dict[str, object]] = []
+            trace_meta = {"truncated": False}
             solution = solve_square(
                 target=request.target,
                 size=request.size,
                 known_grid=request.known_grid,
                 game_mode=request.game_mode,
-                trace=True,
+                trace=request.trace or request.trace_steps,
                 trace_log=trace_log,
+                trace_steps=trace_steps if request.trace_steps else None,
+                trace_meta=trace_meta,
+                trace_max_steps=request.trace_max_steps,
             )
             grid_rows = _format_grid_rows(solution)
-            return SolveResponse(solution=solution, grid_rows=grid_rows, grid_text="\n".join(grid_rows), trace=trace_log)
+            return SolveResponse(
+                solution=solution,
+                grid_rows=grid_rows,
+                grid_text="\n".join(grid_rows),
+                trace=trace_log if request.trace else None,
+                trace_steps=trace_steps if request.trace_steps else None,
+                trace_truncated=trace_meta["truncated"],
+            )
 
         solution = solve_square(
             target=request.target,
