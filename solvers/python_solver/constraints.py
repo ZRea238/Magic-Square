@@ -1,3 +1,5 @@
+import random
+
 from rules.rules import MIN_VALUE
 
 from .types import Grid
@@ -17,6 +19,7 @@ def select_next_cell_with_candidates(
     max_cell_value: int,
     unknown_positions: list[tuple[int, int]],
     grid: Grid,
+    randomized: bool = False,
 ) -> tuple[int, int, list[int]] | None:
     best_choice: tuple[int, int, list[int]] | None = None
     best_domain_size: int | None = None
@@ -39,6 +42,8 @@ def select_next_cell_with_candidates(
             used_values,
             max_cell_value,
         )
+        if randomized and len(candidates) > 1:
+            random.shuffle(candidates)
         if not candidates:
             return r, c, []
 

@@ -22,6 +22,15 @@ class TestApiIntegration(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"status": "ok"})
 
+    def test_solve_catalog_endpoint(self) -> None:
+        response = self.client.get("/solve/catalog")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertIn("languages", body)
+        self.assertIn("catalog", body)
+        self.assertIn("capabilities", body)
+        self.assertIn("python", body["languages"])
+
     def test_solve_endpoint_returns_solution_and_grid_format(self) -> None:
         response = self.client.post(
             "/solve",
@@ -107,6 +116,56 @@ class TestApiIntegration(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertTrue(all(value <= 9 for row in body["solution"] for value in row))
+
+    def test_solve_endpoint_supports_propagation_solve_method(self) -> None:
+        response = self.client.post(
+            "/solve",
+            json={
+                "target": 15,
+                "size": 3,
+                "solve_method": "mrv_backtracking_with_propagation",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertIn("solution", body)
+
+    def test_solve_endpoint_rejects_unknown_language(self) -> None:
+        response = self.client.post(
+            "/solve",
+            json={
+                "target": 15,
+                "size": 3,
+                "language": "rust",
+                "solve_method": "mrv_backtracking",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        body = response.json()
+        self.assertIn("detail", body)
+
+    def test_solve_benchmark_endpoint(self) -> None:
+        response = self.client.post(
+            "/solve/benchmark",
+            json={
+                "target": 15,
+                "size": 3,
+                "languages": ["python"],
+                "solve_methods": [
+                    "mrv_backtracking",
+                    "mrv_backtracking_with_propagation",
+                    "mrv_backtracking_randomized",
+                    "mrv_backtracking_with_propagation_randomized",
+                    "exhaustive_backtracking",
+                    "exhaustive_backtracking_randomized",
+                ],
+                "repeat": 1,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertIn("results", body)
+        self.assertEqual(len(body["results"]), 6)
 
     def test_count_endpoint_returns_exact_count(self) -> None:
         response = self.client.post(

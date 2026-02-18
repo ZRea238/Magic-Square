@@ -15,12 +15,14 @@ class TestMainJsonInput(unittest.TestCase):
         }
         file_path = self._write_json(payload)
 
-        target, size, known_grid, game_mode = load_puzzle_from_file(file_path)
+        target, size, known_grid, language, game_mode, solve_method = load_puzzle_from_file(file_path)
 
         self.assertEqual(target, 15)
         self.assertEqual(size, 3)
         self.assertEqual(known_grid, payload["known_grid"])
+        self.assertEqual(language, "python")
         self.assertEqual(game_mode, "unbounded")
+        self.assertEqual(solve_method, "mrv_backtracking")
 
     def test_loads_valid_payload_without_known_grid(self) -> None:
         payload = {
@@ -29,12 +31,14 @@ class TestMainJsonInput(unittest.TestCase):
         }
         file_path = self._write_json(payload)
 
-        target, size, known_grid, game_mode = load_puzzle_from_file(file_path)
+        target, size, known_grid, language, game_mode, solve_method = load_puzzle_from_file(file_path)
 
         self.assertEqual(target, 15)
         self.assertEqual(size, 3)
         self.assertIsNone(known_grid)
+        self.assertEqual(language, "python")
         self.assertEqual(game_mode, "unbounded")
+        self.assertEqual(solve_method, "mrv_backtracking")
 
     def test_raises_when_json_is_invalid(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -55,9 +59,16 @@ class TestMainJsonInput(unittest.TestCase):
             "known_grid": [[8, None, None], [None, 5, None], [None, None, 2]],
         }
         file_path = self._write_json(payload)
-        target, size, known_grid, game_mode = load_puzzle_from_file(file_path)
+        target, size, known_grid, language, game_mode, solve_method = load_puzzle_from_file(file_path)
 
-        solution = run(target=target, size=size, known_grid=known_grid, game_mode=game_mode)
+        solution = run(
+            target=target,
+            size=size,
+            known_grid=known_grid,
+            language=language,
+            game_mode=game_mode,
+            solve_method=solve_method,
+        )
         self.assertEqual(solution[0][0], 8)
         self.assertEqual(solution[1][1], 5)
         self.assertEqual(solution[2][2], 2)
@@ -71,7 +82,7 @@ class TestMainJsonInput(unittest.TestCase):
         }
         file_path = self._write_json(payload)
 
-        _, _, _, game_mode = load_puzzle_from_file(file_path)
+        _, _, _, _, game_mode, _ = load_puzzle_from_file(file_path)
         self.assertEqual(game_mode, "bounded_by_size_squared")
 
     def _write_json(self, payload: dict) -> str:

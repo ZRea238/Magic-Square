@@ -80,6 +80,20 @@ body {
   color: #b7bcc7;
 }
 
+.capability-note {
+  display: block;
+  margin-top: -0.3rem;
+  font-size: 0.78rem;
+}
+
+.capability-ok {
+  color: #8ec6a5;
+}
+
+.capability-bad {
+  color: #d98f8f;
+}
+
 .import-tools {
   margin-top: 1rem;
   padding: 0.8rem;
@@ -171,6 +185,44 @@ input {
 
 .walkthrough-panel p {
   margin-bottom: 0.35rem;
+}
+
+.benchmark-panel {
+  margin-top: 1rem;
+}
+
+.benchmark-grid {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.65rem;
+}
+
+.benchmark-row {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.benchmark-meta {
+  font-size: 0.82rem;
+  color: #c6cede;
+}
+
+.benchmark-bar-wrap {
+  height: 10px;
+  border-radius: 999px;
+  background: #161b25;
+  border: 1px solid #2a3242;
+  overflow: hidden;
+}
+
+.benchmark-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #4e7bc9, #70b5e8);
+}
+
+.benchmark-error {
+  color: #d98f8f;
 }
 
 .toggle-wrap {

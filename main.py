@@ -1,7 +1,7 @@
 import argparse
 import json
 from pathlib import Path
-from solver.solver import solve_square
+from solvers.python_solver.engines import solve_with_engine
 from typing import Any, Optional
 from rules.rules import MIN_VALUE
 
@@ -10,7 +10,9 @@ def run(
     target: int,
     size: int,
     known_grid: Optional[list[list[Optional[int]]]] = None,
+    language: str = "python",
     game_mode: str = "unbounded",
+    solve_method: str = "mrv_backtracking",
 ) -> list[list[int]]:
     # boundary validation
     if not isinstance(target, int):
@@ -35,28 +37,39 @@ def run(
                 if value < MIN_VALUE:
                     raise ValueError(f"known_grid integers must be at least {MIN_VALUE}")
 
-    return solve_square(target=target, size=size, known_grid=known_grid, game_mode=game_mode)
+    return solve_with_engine(
+        target=target,
+        size=size,
+        known_grid=known_grid,
+        language=language,
+        game_mode=game_mode,
+        solve_method=solve_method,
+    )
 
 
 def run_with_trace(
     target: int,
     size: int,
     known_grid: Optional[list[list[Optional[int]]]] = None,
+    language: str = "python",
     game_mode: str = "unbounded",
+    solve_method: str = "mrv_backtracking",
 ) -> tuple[list[list[int]], list[str]]:
     trace_log: list[str] = []
-    result = solve_square(
+    result = solve_with_engine(
         target=target,
         size=size,
         known_grid=known_grid,
+        language=language,
         game_mode=game_mode,
+        solve_method=solve_method,
         trace=True,
         trace_log=trace_log,
     )
     return result, trace_log
 
 
-def load_puzzle_from_file(input_path: str) -> tuple[int, int, Optional[list[list[Optional[int]]]], str]:
+def load_puzzle_from_file(input_path: str) -> tuple[int, int, Optional[list[list[Optional[int]]]], str, str, str]:
     path = Path(input_path)
     try:
         payload: Any = json.loads(path.read_text(encoding="utf-8"))
@@ -71,15 +84,17 @@ def load_puzzle_from_file(input_path: str) -> tuple[int, int, Optional[list[list
     target = payload.get("target")
     size = payload.get("size")
     known_grid = payload.get("known_grid")
+    language = payload.get("language", "python")
     game_mode = payload.get("game_mode", "unbounded")
+    solve_method = payload.get("solve_method", "mrv_backtracking")
     if target is None:
         raise ValueError("JSON must include 'target'")
     if size is None:
         raise ValueError("JSON must include 'size'")
     if known_grid is None:
-        return target, size, None, game_mode
+        return target, size, None, language, game_mode, solve_method
 
-    return target, size, known_grid, game_mode
+    return target, size, known_grid, language, game_mode, solve_method
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -93,12 +108,26 @@ if __name__ == "__main__":
     args = _build_parser().parse_args()
 
     try:
-        target, size, known_grid, game_mode = load_puzzle_from_file(args.input)
+        target, size, known_grid, language, game_mode, solve_method = load_puzzle_from_file(args.input)
         if args.trace:
-            solution, trace_log = run_with_trace(target=target, size=size, known_grid=known_grid, game_mode=game_mode)
+            solution, trace_log = run_with_trace(
+                target=target,
+                size=size,
+                known_grid=known_grid,
+                language=language,
+                game_mode=game_mode,
+                solve_method=solve_method,
+            )
             print(json.dumps({"solution": solution, "trace": trace_log}, indent=2))
         else:
-            solution = run(target=target, size=size, known_grid=known_grid, game_mode=game_mode)
+            solution = run(
+                target=target,
+                size=size,
+                known_grid=known_grid,
+                language=language,
+                game_mode=game_mode,
+                solve_method=solve_method,
+            )
             print(json.dumps({"solution": solution}, indent=2))
     except ValueError as exc:
         raise SystemExit(f"Error: {exc}")

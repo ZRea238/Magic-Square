@@ -3,7 +3,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 const MIN_SIZE = 2;
 const MAX_SIZE = 7;
+const LANGUAGES = ["python", "go", "cpp"];
 const GAME_MODES = ["unbounded", "bounded_by_size_squared"];
+const SOLVE_METHODS = [
+  "mrv_backtracking",
+  "mrv_backtracking_with_propagation",
+  "mrv_backtracking_randomized",
+  "mrv_backtracking_with_propagation_randomized",
+  "exhaustive_backtracking",
+  "exhaustive_backtracking_randomized",
+];
 const SAMPLE_FILES = [
   { label: "Easy 3x3", path: "/examples/easy-3x3.json" },
   { label: "Medium 4x4", path: "/examples/medium-4x4.json" },
@@ -78,6 +87,14 @@ function parsePuzzleJson(rawData) {
   if (!GAME_MODES.includes(parsedGameMode)) {
     throw new Error(`game_mode must be one of: ${GAME_MODES.join(", ")}.`);
   }
+  const parsedLanguage = rawData.language ?? "python";
+  if (!LANGUAGES.includes(parsedLanguage)) {
+    throw new Error(`language must be one of: ${LANGUAGES.join(", ")}.`);
+  }
+  const parsedSolveMethod = rawData.solve_method ?? "mrv_backtracking";
+  if (!SOLVE_METHODS.includes(parsedSolveMethod)) {
+    throw new Error(`solve_method must be one of: ${SOLVE_METHODS.join(", ")}.`);
+  }
 
   const rawGrid = rawData.known_grid ?? rawData.grid;
   const knownGrid = normalizeKnownGrid(rawGrid, parsedSize);
@@ -85,7 +102,9 @@ function parsePuzzleJson(rawData) {
   return {
     size: parsedSize,
     target: parsedTarget,
+    language: parsedLanguage,
     gameMode: parsedGameMode,
+    solveMethod: parsedSolveMethod,
     knownGrid,
   };
 }
@@ -95,8 +114,15 @@ function App() {
   const [target, setTarget] = useState(defaultTargetForSize(3));
   const [gridInput, setGridInput] = useState(createGrid(3));
   const [userProvided, setUserProvided] = useState(createGrid(3, false));
+  const [language, setLanguage] = useState("python");
   const [gameMode, setGameMode] = useState("unbounded");
+  const [solveMethod, setSolveMethod] = useState("mrv_backtracking");
   const [countInfo, setCountInfo] = useState(null);
+  const [benchmarkResults, setBenchmarkResults] = useState([]);
+  const [benchmarking, setBenchmarking] = useState(false);
+  const [benchmarkRepeat, setBenchmarkRepeat] = useState(1);
+  const [benchmarkWarmupRuns, setBenchmarkWarmupRuns] = useState(1);
+  const [solverCapabilities, setSolverCapabilities] = useState({});
   const [runToCompletion, setRunToCompletion] = useState(false);
   const [countMaxSeconds, setCountMaxSeconds] = useState(30);
   const [useMultiprocessing, setUseMultiprocessing] = useState(false);
@@ -148,7 +174,9 @@ function App() {
 
     setSize(puzzleConfig.size);
     setTarget(puzzleConfig.target);
+    setLanguage(puzzleConfig.language);
     setGameMode(puzzleConfig.gameMode);
+    setSolveMethod(puzzleConfig.solveMethod);
     setGridInput(nextGridInput);
     setUserProvided(nextUserProvided);
     setCountInfo(null);
@@ -228,7 +256,10 @@ function App() {
     setRunToCompletion(false);
     setUseMultiprocessing(false);
     setWorkerCount("");
+    setBenchmarkResults([]);
     setGameMode("unbounded");
+    setLanguage("python");
+    setSolveMethod("mrv_backtracking");
     clearWalkthrough();
     showToast("info", "Grid cleared.");
   }
@@ -278,7 +309,9 @@ function App() {
       const payload = {
         size,
         target: numericTarget,
+        language,
         game_mode: gameMode,
+        solve_method: solveMethod,
         known_grid: knownGrid,
       };
 
@@ -341,6 +374,9 @@ function App() {
       numericTarget = validateTarget();
       knownGrid = buildKnownGrid();
       numericTraceMaxSteps = Number(walkthroughMaxSteps);
+      if (walkthroughMode && language !== "python") {
+        throw new Error("Walkthrough mode is currently available only for Python solvers.");
+      }
       if (walkthroughMode) {
         if (!Number.isInteger(numericTraceMaxSteps) || numericTraceMaxSteps < 1) {
           throw new Error("Walkthrough max steps must be a positive integer.");
@@ -367,7 +403,9 @@ function App() {
           target: numericTarget,
           size,
           known_grid: knownGrid,
+          language,
           game_mode: gameMode,
+          solve_method: solveMethod,
           trace: walkthroughMode,
           trace_steps: walkthroughMode,
           trace_max_steps: numericTraceMaxSteps,
@@ -399,6 +437,59 @@ function App() {
       showToast("error", error.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleRunBenchmark() {
+    let numericTarget;
+    let knownGrid;
+    let repeat;
+    let warmupRuns;
+    try {
+      numericTarget = validateTarget();
+      knownGrid = buildKnownGrid(true);
+      repeat = Number(benchmarkRepeat);
+      if (!Number.isInteger(repeat) || repeat < 1 || repeat > 5) {
+        throw new Error("Benchmark repeat must be an integer between 1 and 5.");
+      }
+      warmupRuns = Number(benchmarkWarmupRuns);
+      if (!Number.isInteger(warmupRuns) || warmupRuns < 0 || warmupRuns > 5) {
+        throw new Error("Benchmark warmup runs must be an integer between 0 and 5.");
+      }
+    } catch (error) {
+      showToast("error", error.message);
+      return;
+    }
+
+    setBenchmarking(true);
+    showToast("info", "Running language/method benchmark...");
+    try {
+      const response = await fetch(`${API_BASE}/solve/benchmark`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          target: numericTarget,
+          size,
+          known_grid: knownGrid,
+          game_mode: gameMode,
+          languages: LANGUAGES,
+          solve_methods: SOLVE_METHODS,
+          repeat,
+          warmup_runs: warmupRuns,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail ?? "Benchmark request failed.");
+      }
+      setBenchmarkResults(data.results ?? []);
+      showToast("success", "Benchmark complete.");
+    } catch (error) {
+      showToast("error", error.message);
+    } finally {
+      setBenchmarking(false);
     }
   }
 
@@ -579,6 +670,50 @@ function App() {
     return `Lower bound: ${countInfo.lower_bound ?? 0}.`;
   }
 
+  const benchmarkMaxMs = useMemo(() => {
+    const okRows = benchmarkResults.filter((row) => row.ok && row.elapsed_ms !== null && row.elapsed_ms !== undefined);
+    if (!okRows.length) {
+      return 1;
+    }
+    return Math.max(...okRows.map((row) => row.elapsed_ms), 1);
+  }, [benchmarkResults]);
+
+  const languageAvailability = solverCapabilities[language]?.available ?? true;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch(`${API_BASE}/solve/catalog`)
+      .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+      .then(({ ok, data }) => {
+        if (cancelled || !ok) {
+          return;
+        }
+        const capabilities = data.capabilities ?? {};
+        setSolverCapabilities(capabilities);
+        if (language !== "python" && capabilities[language] && !capabilities[language].available) {
+          setLanguage("python");
+          showToast("info", `${language.toUpperCase()} solver unavailable in this environment. Switched to Python.`);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSolverCapabilities({});
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (language !== "python" && walkthroughMode) {
+      setWalkthroughMode(false);
+      clearWalkthrough();
+    }
+  }, [language, walkthroughMode]);
+
   useEffect(() => {
     if (walkthroughPlayIntervalRef.current) {
       window.clearInterval(walkthroughPlayIntervalRef.current);
@@ -664,10 +799,42 @@ function App() {
               />
             </label>
             <label>
+              Language
+              <select value={language} onChange={(event) => setLanguage(event.target.value)} disabled={loading || counting}>
+                <option value="python" disabled={solverCapabilities.python && !solverCapabilities.python.available}>
+                  Python
+                </option>
+                <option value="go" disabled={solverCapabilities.go && !solverCapabilities.go.available}>
+                  Go
+                </option>
+                <option value="cpp" disabled={solverCapabilities.cpp && !solverCapabilities.cpp.available}>
+                  C++
+                </option>
+              </select>
+            </label>
+            {solverCapabilities[language] ? (
+              <small className={`capability-note ${solverCapabilities[language].available ? "capability-ok" : "capability-bad"}`}>
+                {solverCapabilities[language].available ? "Available:" : "Unavailable:"} {solverCapabilities[language].reason}
+              </small>
+            ) : null}
+            <label>
               Game Mode
               <select value={gameMode} onChange={(event) => setGameMode(event.target.value)} disabled={loading || counting}>
                 <option value="unbounded">Unbounded Values</option>
                 <option value="bounded_by_size_squared">Bounded by Size Squared</option>
+              </select>
+            </label>
+            <label>
+              Solve Method
+              <select value={solveMethod} onChange={(event) => setSolveMethod(event.target.value)} disabled={loading || counting}>
+                <option value="mrv_backtracking">MRV Backtracking</option>
+                <option value="mrv_backtracking_with_propagation">Backtracking + Propagation</option>
+                <option value="mrv_backtracking_randomized">MRV Backtracking (Randomized)</option>
+                <option value="mrv_backtracking_with_propagation_randomized">
+                  Backtracking + Propagation (Randomized)
+                </option>
+                <option value="exhaustive_backtracking">Exhaustive Backtracking</option>
+                <option value="exhaustive_backtracking_randomized">Exhaustive Backtracking (Randomized)</option>
               </select>
             </label>
           </div>
@@ -697,7 +864,10 @@ function App() {
             <button className="btn btn-secondary" onClick={handleDownloadPuzzle} disabled={loading || counting}>
               Download Current Puzzle JSON
             </button>
-            <p>Format: {`{"size": 3, "target": 15, "game_mode": "unbounded", "known_grid": [[8, null, null], ...]}`}</p>
+            <p>
+              Format:{" "}
+              {`{"size": 3, "target": 15, "language": "python", "game_mode": "unbounded", "solve_method": "mrv_backtracking", "known_grid": [[8, null, null], ...]}`}
+            </p>
           </div>
 
           <div className="legend">
@@ -721,7 +891,7 @@ function App() {
                 setWalkthroughMode(event.target.checked);
                 clearWalkthrough();
               }}
-              disabled={loading || counting}
+              disabled={loading || counting || language !== "python" || !languageAvailability}
             />
             <span>Walkthrough mode (step-by-step pruning trace)</span>
           </label>
@@ -745,6 +915,35 @@ function App() {
                 Cancel Count
               </button>
             ) : null}
+          </div>
+          <label className="count-limit-label">
+            <span>Benchmark Repeat</span>
+            <input
+              type="number"
+              min="1"
+              max="5"
+              step="1"
+              value={benchmarkRepeat}
+              onChange={(event) => setBenchmarkRepeat(event.target.value)}
+              disabled={loading || counting || benchmarking}
+            />
+          </label>
+          <label className="count-limit-label">
+            <span>Benchmark Warmup Runs</span>
+            <input
+              type="number"
+              min="0"
+              max="5"
+              step="1"
+              value={benchmarkWarmupRuns}
+              onChange={(event) => setBenchmarkWarmupRuns(event.target.value)}
+              disabled={loading || counting || benchmarking}
+            />
+          </label>
+          <div className="actions actions-count">
+            <button className="btn btn-secondary" onClick={handleRunBenchmark} disabled={loading || counting || benchmarking}>
+              {benchmarking ? "Benchmarking..." : "Compare Languages & Methods"}
+            </button>
           </div>
           <label className="toggle-wrap">
             <input
@@ -854,6 +1053,34 @@ function App() {
               ) : null}
             </div>
           ) : null}
+          <div className="count-display benchmark-panel">
+            <h3>Performance Comparison</h3>
+            {!benchmarkResults.length ? <p>Run benchmark to compare all language/method combinations.</p> : null}
+            {benchmarkResults.length ? (
+              <div className="benchmark-grid">
+                {benchmarkResults.map((row) => {
+                  const barWidth = row.ok && row.elapsed_ms ? `${Math.max((row.elapsed_ms / benchmarkMaxMs) * 100, 3)}%` : "0%";
+                  return (
+                    <div className="benchmark-row" key={`${row.language}-${row.solve_method}`}>
+                      <div className="benchmark-meta">
+                        <strong>{row.language}</strong> / <span>{row.solve_method}</span>
+                      </div>
+                      {row.ok ? (
+                        <>
+                          <div className="benchmark-bar-wrap">
+                            <div className="benchmark-bar" style={{ width: barWidth }} />
+                          </div>
+                          <small>{row.elapsed_ms.toFixed(2)} ms</small>
+                        </>
+                      ) : (
+                        <small className="benchmark-error">Unavailable: {row.error}</small>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
         </section>
       </section>
 

@@ -1,12 +1,37 @@
 import unittest
 
 from rules.rules import MIN_VALUE
-from solver.solver import count_solutions, solve_square
+from solvers.python_solver.solver import count_solutions, solve_square
 
 
 class TestSolveSquare(unittest.TestCase):
     def test_solves_3x3_without_known_values(self) -> None:
         result = solve_square(target=15, size=3)
+        self.assert_square_constraints(result, target=15)
+        self.assert_unique_values(result)
+
+    def test_solves_3x3_with_propagation_method(self) -> None:
+        result = solve_square(target=15, size=3, solve_method="mrv_backtracking_with_propagation")
+        self.assert_square_constraints(result, target=15)
+        self.assert_unique_values(result)
+
+    def test_solves_3x3_with_randomized_method(self) -> None:
+        result = solve_square(target=15, size=3, solve_method="mrv_backtracking_randomized")
+        self.assert_square_constraints(result, target=15)
+        self.assert_unique_values(result)
+
+    def test_solves_3x3_with_exhaustive_method(self) -> None:
+        result = solve_square(target=15, size=3, solve_method="exhaustive_backtracking")
+        self.assert_square_constraints(result, target=15)
+        self.assert_unique_values(result)
+
+    def test_solves_3x3_with_propagation_randomized_method(self) -> None:
+        result = solve_square(target=15, size=3, solve_method="mrv_backtracking_with_propagation_randomized")
+        self.assert_square_constraints(result, target=15)
+        self.assert_unique_values(result)
+
+    def test_solves_3x3_with_exhaustive_randomized_method(self) -> None:
+        result = solve_square(target=15, size=3, solve_method="exhaustive_backtracking_randomized")
         self.assert_square_constraints(result, target=15)
         self.assert_unique_values(result)
 
@@ -40,6 +65,10 @@ class TestSolveSquare(unittest.TestCase):
     def test_raises_when_size_is_too_small(self) -> None:
         with self.assertRaises(ValueError):
             solve_square(target=6, size=1)
+
+    def test_raises_on_invalid_solve_method(self) -> None:
+        with self.assertRaises(ValueError):
+            solve_square(target=15, size=3, solve_method="unknown")
 
     def test_raises_when_known_grid_is_not_square(self) -> None:
         with self.assertRaises(ValueError):
