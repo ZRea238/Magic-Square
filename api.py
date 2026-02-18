@@ -7,7 +7,8 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from solver.solver import count_solutions, solve_square
+from solvers.python_solver.engines import LANGUAGES, SOLVE_METHODS, runtime_capabilities, solve_with_engine, supported_solver_catalog
+from solvers.python_solver.solver import count_solutions
 
 
 class SolveRequest(BaseModel):
@@ -20,6 +21,15 @@ class SolveRequest(BaseModel):
     game_mode: str = Field(
         default="unbounded",
         description="Game mode: unbounded or bounded_by_size_squared.",
+    )
+    language: str = Field(default="python", description="Solver language: python, go, or cpp.")
+    solve_method: str = Field(
+        default="mrv_backtracking",
+        description=(
+            "Solve method: mrv_backtracking, mrv_backtracking_with_propagation, "
+            "mrv_backtracking_randomized, mrv_backtracking_with_propagation_randomized, "
+            "exhaustive_backtracking, or exhaustive_backtracking_randomized."
+        ),
     )
     trace: bool = Field(default=False, description="Include solver trace output in the response")
     trace_steps: bool = Field(default=False, description="Include structured trace steps for walkthrough/debugging.")
@@ -85,6 +95,41 @@ class CountResponse(BaseModel):
     message: str
 
 
+class BenchmarkRequest(BaseModel):
+    target: int = Field(..., description="Required sum for every row, column, and both full diagonals")
+    size: int = Field(..., description="Side length of the square grid")
+    known_grid: Optional[list[list[Optional[int]]]] = Field(
+        default=None,
+        description="Square grid with integers for known values and null for unknown values",
+    )
+    game_mode: str = Field(default="unbounded", description="Game mode.")
+    languages: list[str] = Field(default_factory=lambda: ["python", "go", "cpp"])
+    solve_methods: list[str] = Field(
+        default_factory=lambda: [
+            "mrv_backtracking",
+            "mrv_backtracking_with_propagation",
+            "mrv_backtracking_randomized",
+            "mrv_backtracking_with_propagation_randomized",
+            "exhaustive_backtracking",
+            "exhaustive_backtracking_randomized",
+        ]
+    )
+    repeat: int = Field(default=1, ge=1, le=5, description="Number of repetitions for each language/method combo.")
+    warmup_runs: int = Field(default=1, ge=0, le=5, description="Number of warmup runs before timed repeats.")
+
+
+class BenchmarkItem(BaseModel):
+    language: str
+    solve_method: str
+    ok: bool
+    elapsed_ms: Optional[float] = None
+    error: Optional[str] = None
+
+
+class BenchmarkResponse(BaseModel):
+    results: list[BenchmarkItem]
+
+
 class CountJobStartResponse(BaseModel):
     job_id: str
     status: str
@@ -128,6 +173,16 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/solve/catalog")
+def solve_catalog() -> dict[str, object]:
+    return {
+        "languages": LANGUAGES,
+        "methods": SOLVE_METHODS,
+        "catalog": supported_solver_catalog(),
+        "capabilities": runtime_capabilities(),
+    }
+
+
 @app.post("/solve", response_model=SolveResponse)
 def solve(request: SolveRequest) -> SolveResponse:
     try:
@@ -135,11 +190,13 @@ def solve(request: SolveRequest) -> SolveResponse:
             trace_log: list[str] = []
             trace_steps: list[dict[str, object]] = []
             trace_meta = {"truncated": False}
-            solution = solve_square(
+            solution = solve_with_engine(
                 target=request.target,
                 size=request.size,
                 known_grid=request.known_grid,
                 game_mode=request.game_mode,
+                language=request.language,
+                solve_method=request.solve_method,
                 trace=request.trace or request.trace_steps,
                 trace_log=trace_log,
                 trace_steps=trace_steps if request.trace_steps else None,
@@ -156,11 +213,13 @@ def solve(request: SolveRequest) -> SolveResponse:
                 trace_truncated=trace_meta["truncated"],
             )
 
-        solution = solve_square(
+        solution = solve_with_engine(
             target=request.target,
             size=request.size,
             known_grid=request.known_grid,
             game_mode=request.game_mode,
+            language=request.language,
+            solve_method=request.solve_method,
         )
         grid_rows = _format_grid_rows(solution)
         return SolveResponse(solution=solution, grid_rows=grid_rows, grid_text="\n".join(grid_rows))
@@ -185,6 +244,76 @@ def count(request: CountRequest) -> CountResponse:
         return CountResponse(**result)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/solve/benchmark", response_model=BenchmarkResponse)
+def solve_benchmark(request: BenchmarkRequest) -> BenchmarkResponse:
+    results: list[BenchmarkItem] = []
+    for language in request.languages:
+        for solve_method in request.solve_methods:
+            best_ms: Optional[float] = None
+            last_error: Optional[str] = None
+            ok = True
+
+            for _ in range(request.warmup_runs):
+                try:
+                    solve_with_engine(
+                        target=request.target,
+                        size=request.size,
+                        known_grid=request.known_grid,
+                        game_mode=request.game_mode,
+                        language=language,
+                        solve_method=solve_method,
+                        trace=False,
+                    )
+                except ValueError as exc:
+                    ok = False
+                    last_error = str(exc)
+                    break
+
+            if not ok:
+                results.append(
+                    BenchmarkItem(
+                        language=language,
+                        solve_method=solve_method,
+                        ok=False,
+                        elapsed_ms=None,
+                        error=last_error,
+                    )
+                )
+                continue
+
+            for _ in range(request.repeat):
+                started = time.perf_counter()
+                try:
+                    solve_with_engine(
+                        target=request.target,
+                        size=request.size,
+                        known_grid=request.known_grid,
+                        game_mode=request.game_mode,
+                        language=language,
+                        solve_method=solve_method,
+                        trace=False,
+                    )
+                    elapsed_ms = (time.perf_counter() - started) * 1000.0
+                    if best_ms is None or elapsed_ms < best_ms:
+                        best_ms = elapsed_ms
+                except ValueError as exc:
+                    ok = False
+                    last_error = str(exc)
+                    break
+
+            results.append(
+                BenchmarkItem(
+                    language=language,
+                    solve_method=solve_method,
+                    ok=ok,
+                    elapsed_ms=best_ms if ok else None,
+                    error=last_error,
+                )
+            )
+
+    return BenchmarkResponse(results=results)
 
 
 @app.post("/count/jobs/start", response_model=CountJobStartResponse, status_code=status.HTTP_202_ACCEPTED)

@@ -32,7 +32,9 @@ Example `POST /solve` request body:
 {
   "target": 15,
   "size": 3,
+  "language": "python",
   "game_mode": "unbounded",
+  "solve_method": "mrv_backtracking",
   "known_grid": [
     [8, null, null],
     [null, 5, null],
@@ -49,6 +51,52 @@ Walkthrough tracing notes:
 - `trace_steps: true` returns structured solver events with grid snapshots for step-by-step replay in the frontend.
 - `trace_max_steps` caps returned events to avoid excessively large responses on harder puzzles.
 - The response includes `trace_truncated` when the step cap is reached.
+
+Solve methods:
+
+- `mrv_backtracking`: baseline MRV-driven backtracking.
+- `mrv_backtracking_with_propagation`: applies forced singleton propagation before branching, then backtracks with MRV.
+- `mrv_backtracking_randomized`: MRV backtracking with randomized candidate ordering to explore different branches.
+- `mrv_backtracking_with_propagation_randomized`: propagation-first MRV search with randomized branch order.
+- `exhaustive_backtracking`: fixed-order exhaustive backtracking (best for baseline comparisons, typically slower).
+- `exhaustive_backtracking_randomized`: fixed-order exhaustive backtracking with randomized candidate ordering.
+
+Solver languages:
+
+- `python`: fully implemented for all listed solve methods.
+- `python`: implemented in `solvers/python_solver/main.py` (core logic lives in `solvers/python_solver/`).
+- `go`: implemented in `solvers/go_solver/main.go`.
+- `cpp`: implemented in `solvers/cpp_solver/main.cpp`.
+
+Language catalog endpoint:
+
+- `GET /solve/catalog` returns languages, methods, and implementation metadata.
+
+External Go/C++ binary contract:
+
+- The binary is invoked with request JSON on stdin and must return JSON on stdout.
+- Expected response shape:
+
+```json
+{
+  "solution": [
+    [8, 1, 6],
+    [3, 5, 7],
+    [4, 9, 2]
+  ]
+}
+```
+
+If you do not set `GO_SOLVER_BIN` / `CPP_SOLVER_BIN`, the API will try:
+
+- Go: `go run solvers/go_solver/main.go`
+- C++: compile `solvers/cpp_solver/main.cpp` to `/tmp/magic_square_cpp_solver` via `g++`
+
+## Benchmark comparison
+
+Use `POST /solve/benchmark` to run timing comparisons across language + solve method combinations.
+The frontend `Compare Languages & Methods` button uses this endpoint and renders a chart-like bar view.
+Use `warmup_runs` to run untimed warmups before measured repeats for fairer language comparisons.
 
 ## Run Frontend (React + Vite)
 
